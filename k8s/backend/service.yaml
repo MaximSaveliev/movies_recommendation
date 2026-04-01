@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: movies-recommendation
+spec:
+  selector:
+    app: backend
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
