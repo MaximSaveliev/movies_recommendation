@@ -33,6 +33,7 @@ jobs:
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-backend"
           docker build \
+            --cache-from "${IMAGE}:latest" \
             --tag "${IMAGE}:${{ github.sha }}" \
             --tag "${IMAGE}:latest" \
             .
