@@ -20,7 +20,7 @@ export function AISearchBar({ onSearch, isLoading }: AISearchBarProps) {
     if (query.trim()) onSearch(query.trim());
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
     const rect = innerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));

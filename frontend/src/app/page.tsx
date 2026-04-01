@@ -129,7 +129,7 @@ export default function HomePage() {
         {!searchResults && totalPages > 1 && (
           <div className="flex justify-center gap-2 mt-10">
             <button
-              onClick={() => { setPage((p) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+              onClick={() => { setPage((p: number) => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}
               disabled={page === 1}
               className="px-4 py-2 bg-zinc-800 rounded disabled:opacity-40 hover:bg-zinc-700 text-sm"
             >
@@ -139,7 +139,7 @@ export default function HomePage() {
               {page} / {totalPages}
             </span>
             <button
-              onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+              onClick={() => { setPage((p: number) => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: "smooth" }); }}
               disabled={page === totalPages}
               className="px-4 py-2 bg-zinc-800 rounded disabled:opacity-40 hover:bg-zinc-700 text-sm"
             >
