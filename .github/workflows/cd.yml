@@ -65,5 +65,5 @@ jobs:
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/backend -n movies-recommendation --timeout=300s
+          kubectl rollout status deployment/backend -n movies-recommendation --timeout=600s
           kubectl rollout status deployment/frontend -n movies-recommendation --timeout=300s
