@@ -214,7 +214,6 @@ frontend/out/
 *.env
 *.env.local
 !.env.example
-k8s/**/secret.yaml
 
 # ML model artifact
 *.pkl

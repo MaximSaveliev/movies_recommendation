@@ -2,39 +2,36 @@
 
 Full-stack movie recommendation app. Browse movies, search by natural language ("French comedy 2024", "similar to Inception"), and get AI-powered recommendations from a locally trained model — no external LLM needed.
 
-**Stack:** FastAPI · PostgreSQL · Redis · Next.js 16 · scikit-learn · Kubernetes (GCP/Rancher)
+**Stack:** FastAPI · PostgreSQL · Redis · Next.js 16 · Sentence Transformers · Kubernetes (GKE)
 
 ---
 
 ## How it works
 
 ```
-User types query → Frontend → POST /search → TF-IDF model → top N movies from DB
+User types query → Frontend → POST /search → Sentence Transformers model → top N movies from DB
 ```
 
 1. **Data collection** — movies from 2020–2026 are fetched from [api.imdbapi.dev](https://api.imdbapi.dev) and stored in PostgreSQL
-2. **Model training** — a TF-IDF vectorizer is trained on movie plots, genres, keywords, countries, cast. Saved to `model.pkl`
-3. **Search** — user query is vectorized and compared to all movies via cosine similarity. Returns top matches
+2. **Model training** — embeddings are generated using `all-MiniLM-L6-v2` (Sentence Transformers) on movie plots, genres, keywords, countries, cast. Saved to `model.pkl`
+3. **Search** — user query is embedded and compared to all movies via cosine similarity. Returns top matches
 4. **Auth** — sessions stored in Redis with a UUID key. HttpOnly cookie on the client
 5. **Cron** — every 24h the app checks for new movies and retrains the model automatically
 
 ---
 
-## Prerequisites
+## Local Development
+
+### Prerequisites
 
 - Python 3.12+
 - Node.js 22+
-- Docker (for PostgreSQL)
-- A Redis instance (cloud or local)
-
----
-
-## Setup
+- Docker
 
 ### 1. PostgreSQL (Docker)
 
 ```bash
-sudo docker run -d \
+docker run -d \
   --name movies-postgres \
   -e POSTGRES_USER=movies_user \
   -e POSTGRES_PASSWORD=movies_pass \
@@ -43,20 +40,16 @@ sudo docker run -d \
   postgres:16-alpine
 ```
 
-Access the database anytime:
+### 2. Redis (Docker)
+
 ```bash
-sudo docker exec -it movies-postgres psql -U movies_user -d movies_db
+docker run -d \
+  --name movies-redis \
+  -p 6379:6379 \
+  redis:7-alpine
 ```
 
-Useful psql commands:
-```sql
-\dt                                                        -- list tables
-SELECT COUNT(*) FROM movies;                               -- total movies
-SELECT title, start_year, aggregate_rating FROM movies LIMIT 10;
-\q                                                         -- quit
-```
-
-### 2. Backend
+### 3. Backend
 
 ```bash
 cd backend
@@ -68,7 +61,7 @@ pip install -r requirements.txt
 Create `backend/.env`:
 ```env
 DATABASE_URL=postgresql://movies_user:movies_pass@localhost:5432/movies_db
-REDIS_URL=redis://default:<password>@<host>:<port>
+REDIS_URL=redis://localhost:6379
 SESSION_TTL_SECONDS=604800
 IMDB_API_BASE_URL=https://api.imdbapi.dev
 MODEL_PATH=model.pkl
@@ -79,21 +72,14 @@ MODEL_PATH=model.pkl
 python scripts/collect_and_train.py
 ```
 
-This will:
-- Create all database tables automatically
-- Fetch all movies 2020–2026 from IMDB API page by page
-- Fetch full details for each movie
-- Train the TF-IDF recommendation model
-- Save `model.pkl` to disk
-
 **Start the API:**
 ```bash
 uvicorn main:app --reload
 ```
 
-API docs available at: `http://localhost:8000/docs`
+API docs: `http://localhost:8000/docs`
 
-### 3. Frontend
+### 4. Frontend
 
 ```bash
 cd frontend
@@ -110,7 +96,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev
 ```
 
-App available at: `http://localhost:3000`
+App: `http://localhost:3000`
 
 ---
 
@@ -125,41 +111,12 @@ App available at: `http://localhost:3000`
 | `POST` | `/auth/logout` | Logout, clears session |
 | `GET` | `/auth/me` | Get current user |
 
-**Register:**
-```bash
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com", "username": "max", "password": "secret123"}'
-```
-
-**Login:**
-```bash
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -c cookies.txt \
-  -d '{"email": "user@example.com", "password": "secret123"}'
-```
-
----
-
 ### Movies
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/movies` | Paginated list of all movies |
+| `GET` | `/movies` | Paginated list |
 | `GET` | `/movies/{id}` | Single movie details |
-
-**List movies (page 2, 20 per page):**
-```bash
-curl "http://localhost:8000/movies?page=2&limit=20"
-```
-
-**Get a specific movie:**
-```bash
-curl http://localhost:8000/movies/tt12042730
-```
-
----
 
 ### Search
 
@@ -167,29 +124,21 @@ curl http://localhost:8000/movies/tt12042730
 |--------|------|-------------|
 | `POST` | `/search` | Natural language movie search |
 
-**Search examples:**
 ```bash
-# By genre + year + country
 curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{"query": "French comedy 2024"}'
-
-# Find movies similar to another movie
-curl -X POST http://localhost:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "similar to Interstellar"}'
-
-# By mood or theme
-curl -X POST http://localhost:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "thriller with twist ending"}'
 ```
 
-Returns an array of up to 20 movies ordered by relevance.
+### Bookmarks
 
----
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/bookmarks` | List user bookmarks |
+| `POST` | `/bookmarks` | Add bookmark |
+| `DELETE` | `/bookmarks/{id}` | Remove bookmark |
 
-### Other
+### Health
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -206,23 +155,28 @@ movies_recommendation/
 │   │   ├── api/
 │   │   │   ├── auth.py          # Auth endpoints
 │   │   │   ├── movies.py        # Movies endpoints
-│   │   │   └── search.py        # Search endpoint
+│   │   │   ├── search.py        # Search endpoint
+│   │   │   └── bookmarks.py     # Bookmarks endpoints
 │   │   ├── models/
 │   │   │   ├── user.py          # User DB model
-│   │   │   └── movie.py         # Movie DB model
+│   │   │   ├── movie.py         # Movie DB model
+│   │   │   └── bookmark.py      # Bookmark DB model
 │   │   ├── schemas/
-│   │   │   ├── user.py          # Request/response schemas
-│   │   │   └── movie.py
+│   │   │   ├── user.py
+│   │   │   ├── movie.py
+│   │   │   └── bookmark.py
 │   │   ├── services/
 │   │   │   ├── auth.py          # Redis session management
 │   │   │   ├── imdb.py          # IMDB API client
 │   │   │   ├── collector.py     # Fetch + store movies
-│   │   │   └── recommender.py   # TF-IDF model train + inference
+│   │   │   └── recommender.py   # Embeddings train + inference
 │   │   ├── config.py            # Settings from .env
 │   │   ├── database.py          # SQLAlchemy engine + session
 │   │   └── redis_client.py      # Redis connection
 │   ├── scripts/
-│   │   └── collect_and_train.py # One-shot data collection + training
+│   │   ├── collect_and_train.py # One-shot data collection + training
+│   │   ├── collect_more.py      # Fetch additional movies
+│   │   └── retrain.py           # Retrain model from existing DB
 │   ├── main.py                  # FastAPI app + cron scheduler
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -232,70 +186,85 @@ movies_recommendation/
 │   │   │   ├── page.tsx             # Home: search bar + movie grid
 │   │   │   ├── login/page.tsx
 │   │   │   ├── register/page.tsx
+│   │   │   ├── profile/page.tsx
 │   │   │   └── movies/[id]/page.tsx # Movie detail
 │   │   ├── components/
 │   │   │   ├── AISearchBar.tsx      # Glowing animated search bar
 │   │   │   ├── MovieCard.tsx
-│   │   │   └── Navbar.tsx
+│   │   │   ├── Navbar.tsx
+│   │   │   ├── BookmarkButton.tsx
+│   │   │   └── MoodButtons.tsx
 │   │   └── lib/
 │   │       ├── api.ts               # Backend API client
 │   │       └── utils.ts
-│   ├── .env.local
 │   ├── Dockerfile
 │   └── package.json
-└── k8s/
-    ├── namespace.yaml
-    ├── backend/                 # Deployment + Service
-    ├── frontend/                # Deployment + Service
-    ├── postgres/                # Deployment + Service + PVC + Secrets
-    └── redis/                   # Deployment + Service + PVC
+├── k8s/
+│   ├── namespace.yaml
+│   ├── ingress.yaml             # GCE Ingress with static IP
+│   ├── backend/                 # Deployment + Service + HPA
+│   ├── frontend/                # Deployment + Service + HPA
+│   ├── postgres/                # Deployment + Service + PVC
+│   └── redis/                   # Deployment + Service + PVC
+└── .github/
+    └── workflows/
+        ├── ci.yml               # Build + push Docker images
+        └── cd.yml               # Deploy to GKE
 ```
 
 ---
 
-## Kubernetes Deployment (GCP / Rancher)
+## Deployment (GCP + GKE)
 
-**1. Build and push Docker images:**
-```bash
-# Backend
-docker build -t gcr.io/YOUR_PROJECT_ID/movies-backend:latest ./backend
-docker push gcr.io/YOUR_PROJECT_ID/movies-backend:latest
+Deployment is fully automated via GitHub Actions.
 
-# Frontend
-docker build -t gcr.io/YOUR_PROJECT_ID/movies-frontend:latest ./frontend
-docker push gcr.io/YOUR_PROJECT_ID/movies-frontend:latest
+### Architecture
+
+```
+Internet → GCP Load Balancer (static IP)
+               ↓
+         GKE Cluster (europe-west1-b)
+         └── Namespace: movies-recommendation
+               ├── Frontend (Next.js, HPA 1-4 pods)
+               ├── Backend  (FastAPI, HPA 1-4 pods)
+               ├── PostgreSQL (1 pod + 10Gi PVC)
+               └── Redis      (1 pod + 1Gi PVC)
 ```
 
-**2. Update secrets** in `k8s/postgres/deployment.yaml` and `k8s/backend/deployment.yaml` with your real passwords.
+### CI/CD
 
-**3. Apply manifests:**
+Every `git push origin master`:
+1. GitHub Actions builds Docker images for backend and frontend
+2. Images are pushed to GCP Artifact Registry
+3. GKE deployments are updated with the new images
+4. Rollout completes automatically
+
+### First-time setup
+
+See the deployment guide for one-time GCP infrastructure setup (project, cluster, static IP, service accounts, GitHub secrets).
+
+### Apply Kubernetes manifests (once)
+
 ```bash
 kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/postgres/secret.yaml
 kubectl apply -f k8s/postgres/
 kubectl apply -f k8s/redis/
+kubectl apply -f k8s/backend/secret.yaml
 kubectl apply -f k8s/backend/
 kubectl apply -f k8s/frontend/
+kubectl apply -f k8s/ingress.yaml
 ```
 
-**4. Run data collection inside the cluster:**
-```bash
-kubectl exec -n movies-recommendation deploy/backend -- \
-  python scripts/collect_and_train.py
-```
-
-**5. Get the frontend external IP:**
-```bash
-kubectl get svc frontend -n movies-recommendation
-```
-
----
-
-## After Development: Freeze Dependencies
+### Verify deployment
 
 ```bash
-# Backend — after all packages are working
-cd backend && source .venv/bin/activate
-pip freeze > requirements.txt
+# Check pods
+kubectl get pods -n movies-recommendation
 
-# Frontend — package-lock.json is already generated by npm install
+# Check ingress IP
+kubectl get ingress -n movies-recommendation
+
+# Health check
+curl http://STATIC_IP/health
 ```
