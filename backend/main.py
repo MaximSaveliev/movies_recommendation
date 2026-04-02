@@ -26,10 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(movies_router)
-app.include_router(search_router)
-app.include_router(bookmarks_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(movies_router, prefix="/api")
+app.include_router(search_router, prefix="/api")
+app.include_router(bookmarks_router, prefix="/api")
 
 scheduler = AsyncIOScheduler()
 

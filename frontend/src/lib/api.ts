@@ -18,47 +18,47 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   auth: {
     register: (data: { email: string; username: string; password: string }) =>
-      request("/auth/register", { method: "POST", body: JSON.stringify(data) }),
+      request("/api/auth/register", { method: "POST", body: JSON.stringify(data) }),
 
     login: (data: { email: string; password: string }) =>
-      request("/auth/login", { method: "POST", body: JSON.stringify(data) }),
+      request("/api/auth/login", { method: "POST", body: JSON.stringify(data) }),
 
-    logout: () => request("/auth/logout", { method: "POST" }),
+    logout: () => request("/api/auth/logout", { method: "POST" }),
 
-    me: () => request<User>("/auth/me"),
+    me: () => request<User>("/api/auth/me"),
   },
 
   movies: {
     list: (page = 1, limit = 20) =>
       request<{ movies: Movie[]; total: number; page: number; limit: number }>(
-        `/movies?page=${page}&limit=${limit}`
+        `/api/movies?page=${page}&limit=${limit}`
       ),
 
-    get: (id: string) => request<Movie>(`/movies/${id}`),
+    get: (id: string) => request<Movie>(`/api/movies/${id}`),
 
-    similar: (id: string) => request<Movie[]>(`/movies/${id}/similar`),
+    similar: (id: string) => request<Movie[]>(`/api/movies/${id}/similar`),
   },
 
   search: {
     query: (query: string, limit = 20, shuffle = false) =>
-      request<Movie[]>("/search", { method: "POST", body: JSON.stringify({ query, limit, shuffle }) }),
+      request<Movie[]>("/api/search", { method: "POST", body: JSON.stringify({ query, limit, shuffle }) }),
   },
 
   bookmarks: {
     list: (kind?: "favorite" | "watch_later") =>
-      request<Bookmark[]>(`/bookmarks${kind ? `?kind=${kind}` : ""}`),
+      request<Bookmark[]>(`/api/bookmarks${kind ? `?kind=${kind}` : ""}`),
 
     status: (movieId: string) =>
-      request<BookmarkStatus>(`/bookmarks/${movieId}/status`),
+      request<BookmarkStatus>(`/api/bookmarks/${movieId}/status`),
 
     add: (movieId: string, kind: "favorite" | "watch_later") =>
-      request<Bookmark>("/bookmarks", {
+      request<Bookmark>("/api/bookmarks", {
         method: "POST",
         body: JSON.stringify({ movie_id: movieId, kind }),
       }),
 
     remove: (movieId: string, kind: "favorite" | "watch_later") =>
-      request(`/bookmarks/${movieId}?kind=${kind}`, { method: "DELETE" }),
+      request(`/api/bookmarks/${movieId}?kind=${kind}`, { method: "DELETE" }),
   },
 };
 
