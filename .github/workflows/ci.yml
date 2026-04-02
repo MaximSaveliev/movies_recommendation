@@ -60,7 +60,6 @@ jobs:
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-frontend"
           docker build \
-            --build-arg NEXT_PUBLIC_API_URL="http://${{ secrets.GCP_STATIC_IP }}" \
             --tag "${IMAGE}:${{ github.sha }}" \
             --tag "${IMAGE}:latest" \
             .
