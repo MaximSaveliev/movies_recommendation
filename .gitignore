@@ -215,8 +215,5 @@ frontend/out/
 *.env.local
 !.env.example
 
-# ML model artifact
-*.pkl
-
 # Docker
 .dockerignore
