@@ -16,6 +16,28 @@ _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 _model_cache: dict = {}
 
 
+def _upload_to_gcs(local_path: str) -> None:
+    if not settings.gcs_bucket:
+        return
+    from google.cloud import storage
+    client = storage.Client()
+    client.bucket(settings.gcs_bucket).blob("model.pkl").upload_from_filename(local_path)
+    logger.info("Model uploaded to gs://%s/model.pkl", settings.gcs_bucket)
+
+
+def _download_from_gcs(local_path: str) -> bool:
+    if not settings.gcs_bucket:
+        return False
+    from google.cloud import storage
+    client = storage.Client()
+    blob = client.bucket(settings.gcs_bucket).blob("model.pkl")
+    if not blob.exists():
+        return False
+    blob.download_to_filename(local_path)
+    logger.info("Model downloaded from gs://%s/model.pkl", settings.gcs_bucket)
+    return True
+
+
 def _build_feature_string(movie: Movie) -> str:
     plot = movie.plot or ""
     parts = [
@@ -51,12 +73,14 @@ def train(db: Session) -> None:
     joblib.dump((embeddings, movie_ids), settings.model_path)
     _model_cache.clear()
     logger.info("Embeddings saved to %s", settings.model_path)
+    _upload_to_gcs(settings.model_path)
 
 
 def _load_model() -> tuple:
     if not _model_cache:
         if not os.path.exists(settings.model_path):
-            raise FileNotFoundError("Model not trained yet. Run collect_and_train first.")
+            if not _download_from_gcs(settings.model_path):
+                raise FileNotFoundError("Model not trained yet. Run collect_and_train first.")
         embeddings, movie_ids = joblib.load(settings.model_path)
         _model_cache["embeddings"] = embeddings
         _model_cache["ids"] = movie_ids

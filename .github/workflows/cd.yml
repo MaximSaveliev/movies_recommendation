@@ -1,7 +1,9 @@
 name: CD
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [master]
 
 env:
@@ -16,8 +18,16 @@ jobs:
     name: Deploy to GKE
     runs-on: ubuntu-latest
     steps:
+      - name: Check CI result
+        if: ${{ github.event.workflow_run.conclusion != 'success' }}
+        run: |
+          echo "CI failed, skipping deploy"
+          exit 1
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -49,17 +59,18 @@ jobs:
           kubectl create secret generic backend-secret \
             --namespace=movies-recommendation \
             --from-literal=DATABASE_URL="postgresql://movies_user:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/movies_db" \
+            --from-literal=GCS_BUCKET_NAME="${{ secrets.GCS_BUCKET_NAME }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-backend:${{ github.sha }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-backend:${{ github.event.workflow_run.head_sha }}"
           kubectl set image deployment/backend backend="${IMAGE}" \
             --namespace=movies-recommendation
 
       - name: Deploy frontend
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-frontend:${{ github.sha }}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/movies-frontend:${{ github.event.workflow_run.head_sha }}"
           kubectl set image deployment/frontend frontend="${IMAGE}" \
             --namespace=movies-recommendation
 

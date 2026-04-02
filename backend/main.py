@@ -1,4 +1,5 @@
 import logging
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
@@ -11,7 +12,7 @@ from app.api.movies import router as movies_router
 from app.api.search import router as search_router
 from app.database import Base, SessionLocal, engine
 from app.services.collector import collect_movies
-from app.services.recommender import train
+from app.services.recommender import _download_from_gcs, train
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,6 +53,15 @@ async def daily_update():
 @app.on_event("startup")
 async def startup():
     Base.metadata.create_all(bind=engine)
+    if not os.path.exists(settings.model_path):
+        logger.info("No local model, checking GCS...")
+        if not _download_from_gcs(settings.model_path):
+            logger.info("No model in GCS, training from scratch...")
+            db = SessionLocal()
+            try:
+                train(db)
+            finally:
+                db.close()
     scheduler.add_job(daily_update, "interval", hours=24)
     scheduler.start()
     logger.info("App started. Database tables created.")

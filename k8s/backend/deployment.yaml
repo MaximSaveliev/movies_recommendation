@@ -24,6 +24,11 @@ spec:
                 secretKeyRef:
                   name: backend-secret
                   key: DATABASE_URL
+            - name: GCS_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: GCS_BUCKET_NAME
             - name: REDIS_URL
               value: "redis://redis:6379"
             - name: IMDB_API_BASE_URL
@@ -39,25 +44,38 @@ spec:
                   key: ALLOWED_ORIGINS
           resources:
             requests:
-              cpu: "100m"
-              memory: "256Mi"
+              cpu: "300m"
+              memory: "512Mi"
             limits:
               cpu: "1000m"
               memory: "2Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 60
             periodSeconds: 15
-            failureThreshold: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 60
             periodSeconds: 10
-            failureThreshold: 5
+            failureThreshold: 3
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: backend
+                topologyKey: kubernetes.io/hostname
 ---
 apiVersion: v1
 kind: ConfigMap

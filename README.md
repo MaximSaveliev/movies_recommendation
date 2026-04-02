@@ -2,18 +2,18 @@
 
 Full-stack movie recommendation app. Browse movies, search by natural language ("French comedy 2024", "similar to Inception"), and get AI-powered recommendations from a locally trained model — no external LLM needed.
 
-**Stack:** FastAPI · PostgreSQL · Redis · Next.js 16 · Sentence Transformers · Kubernetes (GKE)
+**Stack:** FastAPI · PostgreSQL · Redis · Next.js 16 · Sentence Transformers · Kubernetes (GKE) · GCS
 
 ---
 
 ## How it works
 
 ```
-User types query → Frontend → POST /search → Sentence Transformers model → top N movies from DB
+User types query → Frontend → POST /api/search → Sentence Transformers model → top N movies from DB
 ```
 
 1. **Data collection** — movies from 2020–2026 are fetched from [api.imdbapi.dev](https://api.imdbapi.dev) and stored in PostgreSQL
-2. **Model training** — embeddings are generated using `all-MiniLM-L6-v2` (Sentence Transformers) on movie plots, genres, keywords, countries, cast. Saved to `model.pkl`
+2. **Model training** — embeddings generated using `all-MiniLM-L6-v2` on movie plots, genres, keywords, countries, cast. Saved locally and uploaded to GCS
 3. **Search** — user query is embedded and compared to all movies via cosine similarity. Returns top matches
 4. **Auth** — sessions stored in Redis with a UUID key. HttpOnly cookie on the client
 5. **Cron** — every 24h the app checks for new movies and retrains the model automatically
@@ -65,6 +65,7 @@ REDIS_URL=redis://localhost:6379
 SESSION_TTL_SECONDS=604800
 IMDB_API_BASE_URL=https://api.imdbapi.dev
 MODEL_PATH=model.pkl
+GCS_BUCKET=
 ```
 
 **Collect movies and train the model** (run once — takes a while):
@@ -84,15 +85,6 @@ API docs: `http://localhost:8000/docs`
 ```bash
 cd frontend
 npm install
-```
-
-Create `frontend/.env.local`:
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-**Start the dev server:**
-```bash
 npm run dev
 ```
 
@@ -106,26 +98,26 @@ App: `http://localhost:3000`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/auth/register` | Create account |
-| `POST` | `/auth/login` | Login, sets session cookie |
-| `POST` | `/auth/logout` | Logout, clears session |
-| `GET` | `/auth/me` | Get current user |
+| `POST` | `/api/auth/register` | Create account |
+| `POST` | `/api/auth/login` | Login, sets session cookie |
+| `POST` | `/api/auth/logout` | Logout, clears session |
+| `GET` | `/api/auth/me` | Get current user |
 
 ### Movies
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/movies` | Paginated list |
-| `GET` | `/movies/{id}` | Single movie details |
+| `GET` | `/api/movies` | Paginated list |
+| `GET` | `/api/movies/{id}` | Single movie details |
 
 ### Search
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/search` | Natural language movie search |
+| `POST` | `/api/search` | Natural language movie search |
 
 ```bash
-curl -X POST http://localhost:8000/search \
+curl -X POST http://localhost:8000/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "French comedy 2024"}'
 ```
@@ -134,9 +126,9 @@ curl -X POST http://localhost:8000/search \
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/bookmarks` | List user bookmarks |
-| `POST` | `/bookmarks` | Add bookmark |
-| `DELETE` | `/bookmarks/{id}` | Remove bookmark |
+| `GET` | `/api/bookmarks` | List user bookmarks |
+| `POST` | `/api/bookmarks` | Add bookmark |
+| `DELETE` | `/api/bookmarks/{id}` | Remove bookmark |
 
 ### Health
 
@@ -152,119 +144,262 @@ curl -X POST http://localhost:8000/search \
 movies_recommendation/
 ├── backend/
 │   ├── app/
-│   │   ├── api/
-│   │   │   ├── auth.py          # Auth endpoints
-│   │   │   ├── movies.py        # Movies endpoints
-│   │   │   ├── search.py        # Search endpoint
-│   │   │   └── bookmarks.py     # Bookmarks endpoints
-│   │   ├── models/
-│   │   │   ├── user.py          # User DB model
-│   │   │   ├── movie.py         # Movie DB model
-│   │   │   └── bookmark.py      # Bookmark DB model
-│   │   ├── schemas/
-│   │   │   ├── user.py
-│   │   │   ├── movie.py
-│   │   │   └── bookmark.py
-│   │   ├── services/
-│   │   │   ├── auth.py          # Redis session management
-│   │   │   ├── imdb.py          # IMDB API client
-│   │   │   ├── collector.py     # Fetch + store movies
-│   │   │   └── recommender.py   # Embeddings train + inference
-│   │   ├── config.py            # Settings from .env
-│   │   ├── database.py          # SQLAlchemy engine + session
-│   │   └── redis_client.py      # Redis connection
-│   ├── scripts/
-│   │   ├── collect_and_train.py # One-shot data collection + training
-│   │   ├── collect_more.py      # Fetch additional movies
-│   │   └── retrain.py           # Retrain model from existing DB
-│   ├── main.py                  # FastAPI app + cron scheduler
+│   │   ├── api/          # auth, movies, search, bookmarks
+│   │   ├── models/       # SQLAlchemy models
+│   │   ├── services/     # auth, imdb, collector, recommender
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   └── redis_client.py
+│   ├── scripts/          # collect_and_train, collect_more, retrain
+│   ├── main.py
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── page.tsx             # Home: search bar + movie grid
-│   │   │   ├── login/page.tsx
-│   │   │   ├── register/page.tsx
-│   │   │   ├── profile/page.tsx
-│   │   │   └── movies/[id]/page.tsx # Movie detail
-│   │   ├── components/
-│   │   │   ├── AISearchBar.tsx      # Glowing animated search bar
-│   │   │   ├── MovieCard.tsx
-│   │   │   ├── Navbar.tsx
-│   │   │   ├── BookmarkButton.tsx
-│   │   │   └── MoodButtons.tsx
-│   │   └── lib/
-│   │       ├── api.ts               # Backend API client
-│   │       └── utils.ts
+│   ├── src/app/          # page.tsx, login, register, profile, movies/[id]
+│   ├── src/components/   # AISearchBar, MovieCard, Navbar, BookmarkButton, MoodButtons
+│   ├── src/lib/api.ts
 │   ├── Dockerfile
 │   └── package.json
 ├── k8s/
 │   ├── namespace.yaml
-│   ├── ingress.yaml             # GCE Ingress with static IP
-│   ├── backend/                 # Deployment + Service + HPA
-│   ├── frontend/                # Deployment + Service + HPA
-│   ├── postgres/                # Deployment + Service + PVC
-│   └── redis/                   # Deployment + Service + PVC
-└── .github/
-    └── workflows/
-        ├── ci.yml               # Build + push Docker images
-        └── cd.yml               # Deploy to GKE
+│   ├── ingress.yaml
+│   ├── backend/          # deployment, service, hpa
+│   ├── frontend/         # deployment, service, hpa
+│   ├── postgres/         # deployment, service
+│   └── redis/            # deployment, service
+└── .github/workflows/
+    ├── ci.yml            # build + push Docker images
+    └── cd.yml            # deploy to GKE (runs after CI)
 ```
 
 ---
 
-## Deployment (GCP + GKE)
+## Kubernetes
 
-Deployment is fully automated via GitHub Actions.
+### Overview
 
-### Architecture
+The app runs on **Google Kubernetes Engine (GKE)** in `europe-west1-b`.
 
 ```
-Internet → GCP Load Balancer (static IP)
-               ↓
-         GKE Cluster (europe-west1-b)
-         └── Namespace: movies-recommendation
-               ├── Frontend (Next.js, HPA 1-4 pods)
-               ├── Backend  (FastAPI, HPA 1-4 pods)
-               ├── PostgreSQL (1 pod + 10Gi PVC)
-               └── Redis      (1 pod + 1Gi PVC)
+Internet
+  └── GCP L7 Load Balancer  (static IP: 34.111.139.77)
+        └── GKE Cluster: movies-cluster
+              └── Namespace: movies-recommendation
+                    ├── backend   pod(s)   ← FastAPI + ML model
+                    ├── frontend  pod(s)   ← Next.js
+                    ├── postgres  pod      ← PostgreSQL 16
+                    └── redis     pod      ← Redis 7
 ```
 
-### CI/CD
+---
+
+### Control Plane
+
+Managed entirely by GKE — you never SSH into it or configure it. It runs:
+
+| Component | Role |
+|-----------|------|
+| **API Server** | Entry point for all `kubectl` and CD pipeline commands. Validates and stores resource definitions |
+| **Scheduler** | Decides which node each pod runs on, based on resource requests and affinity rules |
+| **Controller Manager** | Watches all deployments and reconciles reality with the desired state. If a pod dies, it creates a replacement |
+| **etcd** | Distributed key-value store holding the full cluster state |
+
+---
+
+### Cluster & Nodes
+
+| Property | Value |
+|----------|-------|
+| Cluster | `movies-cluster` |
+| Zone | `europe-west1-b` |
+| Machine type | `e2-standard-2` (2 vCPU / 8 GB RAM) |
+| Autoscaler | 1–4 nodes, Balanced policy |
+| Allocatable per node | ~1.93 vCPU / ~4.3 GB RAM |
+
+Nodes are GCE VMs. The cluster autoscaler adds a node when pods are pending due to resource pressure, and removes a node when it has been underutilized for 10+ minutes.
+
+---
+
+### Namespace
+
+All resources live in `movies-recommendation`. This isolates them from GKE system pods and any other workloads on the cluster. Every `kubectl` command needs `-n movies-recommendation`.
+
+---
+
+### Pods & Containers
+
+Each deployment manages one or more identical pods. Each pod runs one container.
+
+| Deployment | Container | Replicas |
+|------------|-----------|----------|
+| `backend` | FastAPI + APScheduler + Sentence Transformers | HPA 1–4 |
+| `frontend` | Next.js standalone server | HPA 1–4 |
+| `postgres` | PostgreSQL 16 | 1 (fixed) |
+| `redis` | Redis 7 | 1 (fixed) |
+
+**Backend pod startup sequence:**
+1. Container starts, `startup()` runs
+2. Checks if `model.pkl` exists locally → tries to download from GCS (~5s)
+3. If GCS has no model (first ever deploy) → trains from all DB movies (~3–5 min)
+4. `startupProbe` polls `/health` every 10s, allows up to 30 failures (5 min budget)
+5. Once healthy, `livenessProbe` and `readinessProbe` take over normal monitoring
+
+**Pod spreading:** `backend` and `frontend` both have `podAntiAffinity` with `preferredDuringScheduling` on `kubernetes.io/hostname` — the scheduler prefers to place replicas on different nodes.
+
+---
+
+### Services
+
+Services give pods a stable internal DNS name regardless of pod restarts or IP changes.
+
+| Service | DNS name | Port |
+|---------|----------|------|
+| `backend` | `backend` | 8000 |
+| `frontend` | `frontend` | 3000 |
+| `postgres` | `postgres` | 5432 |
+| `redis` | `redis` | 6379 |
+
+All are `ClusterIP` — reachable only inside the cluster. External traffic enters through the Ingress.
+
+---
+
+### Ingress
+
+A single GCE L7 Load Balancer routes all external traffic:
+
+```
+/api/*   → backend:8000   (FastAPI API)
+/health  → backend:8000   (health check)
+/*       → frontend:3000  (Next.js pages)
+```
+
+The static IP `34.111.139.77` is reserved in GCP and attached via the annotation `kubernetes.io/ingress.global-static-ip-name: movies-static-ip`.
+
+---
+
+### Persistent Volumes (PVC)
+
+Stateful services use GCP Persistent Disks provisioned automatically by GKE.
+
+| PVC | Size | Mount path |
+|-----|------|------------|
+| `postgres-pvc` | 10 Gi | `/var/lib/postgresql/data` |
+| `redis-pvc` | 1 Gi | `/data` |
+
+Both are `ReadWriteOnce`. Data survives pod restarts and redeployments. The disk persists until the PVC is explicitly deleted.
+
+---
+
+### Model Storage (GCS)
+
+`model.pkl` (~50 MB) is stored in a GCS bucket so all backend pods can share the same trained model.
+
+```
+train() finishes
+  └── joblib.dump → /app/model.pkl  (local container)
+  └── _upload_to_gcs → gs://movies-model-bucket/model.pkl
+
+Pod starts (any restart or scale-up event)
+  └── no local model.pkl
+  └── _download_from_gcs → /app/model.pkl  (~5s)
+  └── pod ready in seconds, no retraining
+```
+
+---
+
+### Horizontal Pod Autoscaler (HPA)
+
+| HPA | Min | Max | Triggers |
+|-----|-----|-----|----------|
+| `backend-hpa` | 1 | 4 | CPU > 70% or Memory > 80% |
+| `frontend-hpa` | 1 | 4 | CPU > 70% |
+
+When load increases, HPA adds pods. If those pods can't be scheduled, the node autoscaler adds a new VM.
+
+---
+
+### CI/CD Pipeline
 
 Every `git push origin master`:
-1. GitHub Actions builds Docker images for backend and frontend
-2. Images are pushed to GCP Artifact Registry
-3. GKE deployments are updated with the new images
-4. Rollout completes automatically
 
-### First-time setup
+```
+CI workflow (ci.yml) — runs immediately on push
+  ├── Build backend image → push :sha and :latest to Artifact Registry
+  └── Build frontend image → push :sha and :latest to Artifact Registry
 
-See the deployment guide for one-time GCP infrastructure setup (project, cluster, static IP, service accounts, GitHub secrets).
+CD workflow (cd.yml) — starts only after CI succeeds
+  ├── kubectl apply k8s/ manifests   (idempotent — creates missing, updates existing)
+  ├── kubectl apply secrets          (DATABASE_URL, GCS_BUCKET_NAME, POSTGRES_PASSWORD)
+  ├── kubectl set image backend  → :sha
+  ├── kubectl set image frontend → :sha
+  └── kubectl rollout status         (waits until pods are healthy)
+```
 
-### Apply Kubernetes manifests (once)
+CD uses `workflow_run` trigger so it never starts before CI finishes pushing the images.
+
+---
+
+## First-time GCP Setup
+
+Run once before the first push:
+
+```bash
+# Reserve static IP
+gcloud compute addresses create movies-static-ip --global
+
+# Create GCS bucket for model
+gsutil mb -l europe-west1 gs://movies-model-bucket
+
+# Grant GKE node service account access to the bucket
+# Find the SA: GCP Console → IAM → filter "compute"
+gsutil iam ch serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com:roles/storage.objectAdmin gs://movies-model-bucket
+```
+
+**GitHub repository secrets required:**
+
+| Secret | Value |
+|--------|-------|
+| `GCP_PROJECT_ID` | GCP project ID |
+| `GCP_SA_KEY` | Service account JSON key |
+| `GKE_CLUSTER` | `movies-cluster` |
+| `GKE_ZONE` | `europe-west1-b` |
+| `ARTIFACT_REGISTRY` | `europe-west1-docker.pkg.dev` |
+| `POSTGRES_PASSWORD` | DB password |
+| `GCS_BUCKET_NAME` | `movies-model-bucket` |
+
+---
+
+## Apply Manifests (manual / first deploy)
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/postgres/secret.yaml
 kubectl apply -f k8s/postgres/
 kubectl apply -f k8s/redis/
-kubectl apply -f k8s/backend/secret.yaml
 kubectl apply -f k8s/backend/
 kubectl apply -f k8s/frontend/
 kubectl apply -f k8s/ingress.yaml
 ```
 
-### Verify deployment
+---
+
+## Verify Deployment
 
 ```bash
-# Check pods
+# All pods running
 kubectl get pods -n movies-recommendation
 
-# Check ingress IP
+# Pods spread across nodes
+kubectl get pods -n movies-recommendation -o wide
+
+# HPA status
+kubectl get hpa -n movies-recommendation
+
+# Ingress IP
 kubectl get ingress -n movies-recommendation
 
+# Backend logs (model loading)
+kubectl logs -n movies-recommendation deploy/backend
+
 # Health check
-curl http://STATIC_IP/health
+curl http://34.111.139.77/health
 ```
