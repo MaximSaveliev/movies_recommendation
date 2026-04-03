@@ -133,7 +133,7 @@ export default function HomePage() {
               disabled={page === 1}
               className="px-4 py-2 bg-zinc-800 rounded disabled:opacity-40 hover:bg-zinc-700 text-sm"
             >
-              Previous
+              Previousss
             </button>
             <span className="px-4 py-2 text-zinc-400 text-sm">
               {page} / {totalPages}
