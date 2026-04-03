@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 604800
     imdb_api_base_url: str
     model_path: str = "model.pkl"
-    gcs_bucket: str = ""
+    gcs_bucket_name: str = ""
     allowed_origins: str = "http://localhost:3000"
 
     class Config:

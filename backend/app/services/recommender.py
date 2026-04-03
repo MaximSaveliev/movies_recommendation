@@ -17,24 +17,24 @@ _model_cache: dict = {}
 
 
 def _upload_to_gcs(local_path: str) -> None:
-    if not settings.gcs_bucket:
+    if not settings.gcs_bucket_name:
         return
     from google.cloud import storage
     client = storage.Client()
-    client.bucket(settings.gcs_bucket).blob("model.pkl").upload_from_filename(local_path)
-    logger.info("Model uploaded to gs://%s/model.pkl", settings.gcs_bucket)
+    client.bucket(settings.gcs_bucket_name).blob("model.pkl").upload_from_filename(local_path)
+    logger.info("Model uploaded to gs://%s/model.pkl", settings.gcs_bucket_name)
 
 
 def _download_from_gcs(local_path: str) -> bool:
-    if not settings.gcs_bucket:
+    if not settings.gcs_bucket_name:
         return False
     from google.cloud import storage
     client = storage.Client()
-    blob = client.bucket(settings.gcs_bucket).blob("model.pkl")
+    blob = client.bucket(settings.gcs_bucket_name).blob("model.pkl")
     if not blob.exists():
         return False
     blob.download_to_filename(local_path)
-    logger.info("Model downloaded from gs://%s/model.pkl", settings.gcs_bucket)
+    logger.info("Model downloaded from gs://%s/model.pkl", settings.gcs_bucket_name)
     return True
 
 

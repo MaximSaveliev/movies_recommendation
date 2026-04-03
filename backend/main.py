@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -11,6 +12,7 @@ from app.api.bookmarks import router as bookmarks_router
 from app.api.movies import router as movies_router
 from app.api.search import router as search_router
 from app.database import Base, SessionLocal, engine
+from app.redis_client import client as redis_client
 from app.services.collector import collect_movies
 from app.services.recommender import _download_from_gcs, train
 
@@ -56,12 +58,19 @@ async def startup():
     if not os.path.exists(settings.model_path):
         logger.info("No local model, checking GCS...")
         if not _download_from_gcs(settings.model_path):
-            logger.info("No model in GCS, training from scratch...")
-            db = SessionLocal()
-            try:
-                train(db)
-            finally:
-                db.close()
+            acquired = redis_client.set("model_training_lock", "1", nx=True, ex=600)
+            if acquired:
+                logger.info("Acquired training lock, training from scratch...")
+                db = SessionLocal()
+                try:
+                    train(db)
+                finally:
+                    db.close()
+                    redis_client.delete("model_training_lock")
+            else:
+                logger.info("Another pod is training, waiting for GCS...")
+                while not _download_from_gcs(settings.model_path):
+                    await asyncio.sleep(15)
     scheduler.add_job(daily_update, "interval", hours=24)
     scheduler.start()
     logger.info("App started. Database tables created.")
