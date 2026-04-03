@@ -19,23 +19,30 @@ _model_cache: dict = {}
 def _upload_to_gcs(local_path: str) -> None:
     if not settings.gcs_bucket_name:
         return
-    from google.cloud import storage
-    client = storage.Client()
-    client.bucket(settings.gcs_bucket_name).blob("model.pkl").upload_from_filename(local_path)
-    logger.info("Model uploaded to gs://%s/model.pkl", settings.gcs_bucket_name)
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        client.bucket(settings.gcs_bucket_name).blob("model.pkl").upload_from_filename(local_path)
+        logger.info("Model uploaded to gs://%s/model.pkl", settings.gcs_bucket_name)
+    except Exception as e:
+        logger.warning("GCS upload failed: %s", e)
 
 
 def _download_from_gcs(local_path: str) -> bool:
     if not settings.gcs_bucket_name:
         return False
-    from google.cloud import storage
-    client = storage.Client()
-    blob = client.bucket(settings.gcs_bucket_name).blob("model.pkl")
-    if not blob.exists():
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        blob = client.bucket(settings.gcs_bucket_name).blob("model.pkl")
+        if not blob.exists():
+            return False
+        blob.download_to_filename(local_path)
+        logger.info("Model downloaded from gs://%s/model.pkl", settings.gcs_bucket_name)
+        return True
+    except Exception as e:
+        logger.warning("GCS download failed: %s", e)
         return False
-    blob.download_to_filename(local_path)
-    logger.info("Model downloaded from gs://%s/model.pkl", settings.gcs_bucket_name)
-    return True
 
 
 def _build_feature_string(movie: Movie) -> str:
